@@ -1,9 +1,13 @@
 [build]
 target = "thumbv4t-none-eabi"
-rustflags = ["-Clink-arg=-Tlinker_script.ld"]
-
-[target.thumbv4t-none-eabi]
-runner = "mgba"
 
 [unstable]
 build-std = ["core"]
+
+[target.thumbv4t-none-eabi]
+runner = "mgba -l 4095"
+rustflags = [
+  "-Clinker=arm-none-eabi-ld",
+  "-Clink-arg=-Tlinker_scripts/mono_boot.ld",
+  "--emit=mir",
+]
