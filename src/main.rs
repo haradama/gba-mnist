@@ -10,7 +10,7 @@ const SCREEN_H: u16 = 160;
 const CANVAS_INNER: u16 = 140;
 const CANVAS_BORDER: u16 = 2;
 const CANVAS_OUTER: u16 = CANVAS_INNER + CANVAS_BORDER * 2;
-const CURSOR_SIZE: u16 = 5;
+const CURSOR_SIZE: u16 = 10;
 
 // top-left of the outer frame (centered)
 const FRAME_X: u16 = (SCREEN_W - CANVAS_OUTER) / 2; // 48
