@@ -10,7 +10,7 @@ const SCREEN_H: u16 = 160;
 const CANVAS_INNER: u16 = 140;
 const CANVAS_BORDER: u16 = 2;
 const CANVAS_OUTER: u16 = CANVAS_INNER + CANVAS_BORDER * 2;
-const CURSOR_SIZE: u16 = 12;
+const CURSOR_SIZE: u16 = 10;
 
 // top-left of the outer frame (centered)
 const FRAME_X: u16 = (SCREEN_W - CANVAS_OUTER) / 2; // 48
@@ -253,80 +253,71 @@ extern "C" fn main() -> ! {
 
 #[inline(always)]
 fn dist2(dx: u16, dy: u16) -> i32 {
-    let r = (CURSOR_SIZE / 2) as i32;          // centre = (r,r)
+    let r = (CURSOR_SIZE / 2) as i32;
     let cx = dx as i32 - r;
     let cy = dy as i32 - r;
     cx * cx + cy * cy
 }
+const R_OUT2:  i32 =  (CURSOR_SIZE / 2) as i32 * (CURSOR_SIZE / 2) as i32;    // 25
+const R_IN2:   i32 = ((CURSOR_SIZE / 2) as i32 - 1).pow(2);                   // 16
 
-// pre-computed radii
-const R_INNER2: i32 = ((CURSOR_SIZE / 2) as i32 - 1).pow(2); // 4 px radius → 16
-const R_OUTER2: i32 =  ((CURSOR_SIZE / 2) as i32).pow(2); // 5 px radius → 25
-
-
-// ───────── ② draw cursor (white fill, optional black rim) ─────────
-fn draw_cursor(x: u16, y: u16, with_border: bool) {
+// draw filled disc or disc+outline ------------------------------------
+fn draw_disc(x: u16, y: u16, with_border: bool) {
     for dy in 0..CURSOR_SIZE {
         for dx in 0..CURSOR_SIZE {
             let d2 = dist2(dx, dy);
-            if d2 <= R_OUTER2 {                          // inside outer circle?
-                let col = if with_border && d2 >= R_INNER2 {
-                    Color::BLACK                         // 1-px rim
-                } else {
-                    Color::WHITE                         // interior
-                };
+            if d2 <= R_OUT2 {
+                let c = if with_border && d2 >= R_IN2 { Color::BLACK }
+                        else                          { Color::WHITE };
                 VIDEO3_VRAM
                     .index((x + dx) as usize, (y + dy) as usize)
-                    .write(col);
+                    .write(c);
             }
         }
     }
 }
 
-
+// ───────── V-Blank IRQ ─────────
 #[link_section = ".iwram.vblank"]
 extern "C" fn vblank(_: IrqBits) {
-    let x = CUR_X.read();
-    let y = CUR_Y.read();
-    let px = PREV_X.read();
-    let py = PREV_Y.read();
+    let x  = CUR_X.read();   let y  = CUR_Y.read();
+    let px = PREV_X.read();  let py = PREV_Y.read();
 
-    let paint_now = A_HELD.read() != 0;
-    let paint_prev = PREV_DRAW.read() != 0;
+    let a_now  = A_HELD.read()    != 0;
+    let a_prev = PREV_DRAW.read() != 0;
 
-    // restore previous cursor background
-    if !paint_prev {
-        unsafe {
-            for dy in 0..CURSOR_SIZE {
-                for dx in 0..CURSOR_SIZE {
-                    VIDEO3_VRAM
-                        .index((px + dx) as usize, (py + dy) as usize)
-                        .write(CUR_BACK[dy as usize][dx as usize]);
-                }
-            }
-        }
-    }
-
-    // save background under new cursor
+    // 1) always restore the old 10×10 background
     unsafe {
         for dy in 0..CURSOR_SIZE {
             for dx in 0..CURSOR_SIZE {
-                CUR_BACK[dy as usize][dx as usize] = VIDEO3_VRAM
-                    .index((x + dx) as usize, (y + dy) as usize)
-                    .read();
+                VIDEO3_VRAM
+                    .index((px + dx) as usize, (py + dy) as usize)
+                    .write(CUR_BACK[dy as usize][dx as usize]);
             }
         }
     }
+    // 2) if last frame was drawing, stamp the white ink (no outline)
+    if a_prev {
+        draw_disc(px, py, false);
+    }
 
-    // draw new cursor
-    // draw_rect(x, y, CURSOR_SIZE, CURSOR_SIZE, Color::WHITE);
-    // draw_circle(x, y, Color::WHITE);
-    draw_cursor(x, y, !paint_now);
+    // 3) grab background under NEW cursor
+    unsafe {
+        for dy in 0..CURSOR_SIZE {
+            for dx in 0..CURSOR_SIZE {
+                CUR_BACK[dy as usize][dx as usize] =
+                    VIDEO3_VRAM
+                        .index((x + dx) as usize, (y + dy) as usize)
+                        .read();
+            }
+        }
+    }
+    // 4) draw visible cursor (white + black rim)
+    draw_disc(x, y, true);
 
-    // update shared state
-    PREV_X.write(x);
-    PREV_Y.write(y);
-    PREV_DRAW.write(paint_now as u16);
+    // 5) update shared cells
+    PREV_X.write(x); PREV_Y.write(y);
+    PREV_DRAW.write(a_now as u16);
 }
 
 fn infer_and_show(log: &mut MgbaBufferedLogger) {
